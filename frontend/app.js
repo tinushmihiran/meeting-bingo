@@ -1,19 +1,12 @@
 'use strict';
 
 const STORAGE_KEY = 'meeting-bingo-voice';
-const DEBOUNCE_MS = 3000;
-const PERIODIC_MS = 20000;
 
 let card = [];
 let matched = new Set();
-let evidenceMap = {};
 let winningLine = null;
 let finalTranscript = '';
-let lastCheckedLength = 0;
 let isListening = false;
-let isChecking = false;
-let debounceTimer = null;
-let periodicTimer = null;
 
 const gridEl        = document.getElementById('grid');
 const micBtn        = document.getElementById('mic-btn');
@@ -46,10 +39,12 @@ if (SR) {
         interim += event.results[i][0].transcript;
       }
     }
-    finalTextEl.textContent = finalTranscript;
+    finalTextEl.textContent   = finalTranscript;
     interimTextEl.textContent = interim;
-    transcriptEl.scrollTop = transcriptEl.scrollHeight;
-    scheduleCheck();
+    transcriptEl.scrollTop    = transcriptEl.scrollHeight;
+
+    // Instant match — runs on every interim update, no debounce
+    matchPhrases(finalTranscript + ' ' + interim);
   };
 
   recognition.onerror = (event) => {
@@ -73,60 +68,45 @@ if (SR) {
   setStatus('Speech recognition not supported — try Chrome or Edge.', 'error');
 }
 
-// ── Check logic ───────────────────────────────────────────────────────────────
+// ── Instant phrase matching ───────────────────────────────────────────────────
 
-function scheduleCheck() {
-  clearTimeout(debounceTimer);
-  debounceTimer = setTimeout(runCheck, DEBOUNCE_MS);
-}
+function matchPhrases(text) {
+  const lower = text.toLowerCase();
+  const prevMatched = new Set(matched);
 
-async function runCheck() {
-  if (isChecking || winningLine) return;
-  if (finalTranscript.length <= lastCheckedLength || !finalTranscript.trim()) return;
-
-  isChecking = true;
-  setStatus('Checking…', 'checking');
-
-  try {
-    const res = await fetch('/api/check', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ transcript: finalTranscript, phrases: card }),
-    });
-
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({ detail: 'Request failed' }));
-      setStatus(body.detail || 'Check failed', 'error');
-      return;
+  card.forEach(phrase => {
+    if (!matched.has(phrase) && lower.includes(phrase.toLowerCase())) {
+      matched.add(phrase);
     }
+  });
 
-    const data = await res.json();
-    lastCheckedLength = finalTranscript.length;
+  const hasNew = matched.size > prevMatched.size;
+  if (!hasNew) return;
 
-    const prevMatched = new Set(matched);
-    data.results.forEach(r => {
-      if (r.matched) {
-        matched.add(r.phrase);
-        if (r.evidence) evidenceMap[r.phrase] = r.evidence;
-      }
-    });
+  updateGrid(prevMatched);
 
-    if (data.bingo && data.winning_line) {
-      winningLine = data.winning_line;
+  if (!winningLine) {
+    winningLine = findWinningLine();
+    if (winningLine) {
       bingoBanner.className = 'banner-visible';
       setStatus('BINGO!', 'bingo');
-      clearInterval(periodicTimer);
-    } else {
-      setStatus(isListening ? 'Listening…' : '', isListening ? 'listening' : '');
+      updateGrid(prevMatched);
     }
-
-    updateGrid(prevMatched);
-    saveState();
-  } catch (e) {
-    setStatus('Error: ' + e.message, 'error');
-  } finally {
-    isChecking = false;
   }
+
+  saveState();
+}
+
+function findWinningLine() {
+  const N = 5;
+  const grid = Array.from({ length: N }, (_, r) => card.slice(r * N, (r + 1) * N));
+  const lines = [
+    ...grid,
+    ...Array.from({ length: N }, (_, c) => grid.map(r => r[c])),
+    grid.map((r, i) => r[i]),
+    grid.map((r, i) => r[N - 1 - i]),
+  ];
+  return lines.find(line => line.every(p => matched.has(p))) || null;
 }
 
 // ── Grid ──────────────────────────────────────────────────────────────────────
@@ -142,18 +122,18 @@ function buildGrid() {
 }
 
 function updateGrid(prevMatched = null) {
-  const cells = gridEl.querySelectorAll('.cell');
-  cells.forEach((cell, i) => {
+  gridEl.querySelectorAll('.cell').forEach((cell, i) => {
     const phrase = card[i];
     const isMatched = matched.has(phrase);
     const isWinner  = winningLine && winningLine.includes(phrase);
     const isNew     = prevMatched && isMatched && !prevMatched.has(phrase);
 
     cell.classList.toggle('matched', isMatched);
-    cell.classList.toggle('winner',  isWinner);
-    cell.title = evidenceMap[phrase] || '';
+    cell.classList.toggle('winner', isWinner);
 
     if (isNew) {
+      cell.classList.remove('new-match');
+      void cell.offsetWidth; // force reflow to restart animation
       cell.classList.add('new-match');
       setTimeout(() => cell.classList.remove('new-match'), 600);
     }
@@ -170,13 +150,9 @@ function setListening(active) {
 
   if (active) {
     setStatus('Listening…', 'listening');
-    periodicTimer = setInterval(runCheck, PERIODIC_MS);
     try { recognition.start(); } catch (_) {}
   } else {
-    clearInterval(periodicTimer);
-    clearTimeout(debounceTimer);
     try { recognition.stop(); } catch (_) {}
-    if (finalTranscript.length > lastCheckedLength) runCheck();
     if (!winningLine) setStatus('', '');
   }
 }
@@ -192,14 +168,12 @@ async function fetchCard() {
   setStatus('Loading…', '');
   try {
     const res = await fetch('/api/card');
-    if (!res.ok) throw new Error('Failed to fetch card');
+    if (!res.ok) throw new Error('status ' + res.status);
     const data = await res.json();
-    card         = data.phrases;
-    matched      = new Set();
-    evidenceMap  = {};
-    winningLine  = null;
-    finalTranscript   = '';
-    lastCheckedLength = 0;
+    card            = data.phrases;
+    matched         = new Set();
+    winningLine     = null;
+    finalTranscript = '';
     finalTextEl.textContent   = '';
     interimTextEl.textContent = '';
     bingoBanner.className = 'banner-hidden';
@@ -208,7 +182,7 @@ async function fetchCard() {
     setStatus('', '');
     saveState();
   } catch (e) {
-    setStatus('Failed to load card.', 'error');
+    setStatus('Failed to load card: ' + e.message, 'error');
   }
 }
 
@@ -217,8 +191,7 @@ async function fetchCard() {
 function saveState() {
   try {
     sessionStorage.setItem(STORAGE_KEY, JSON.stringify({
-      card, matched: [...matched], evidenceMap, winningLine,
-      transcript: finalTranscript,
+      card, matched: [...matched], winningLine, transcript: finalTranscript,
     }));
   } catch (_) {}
 }
@@ -227,12 +200,10 @@ function loadState() {
   try {
     const s = JSON.parse(sessionStorage.getItem(STORAGE_KEY));
     if (s && Array.isArray(s.card) && s.card.length === 25) {
-      card         = s.card;
-      matched      = new Set(s.matched || []);
-      evidenceMap  = s.evidenceMap || {};
-      winningLine  = s.winningLine || null;
-      finalTranscript   = s.transcript || '';
-      lastCheckedLength = finalTranscript.length;
+      card            = s.card;
+      matched         = new Set(s.matched || []);
+      winningLine     = s.winningLine || null;
+      finalTranscript = s.transcript || '';
       finalTextEl.textContent = finalTranscript;
       buildGrid();
       updateGrid();
@@ -257,8 +228,7 @@ newCardBtn.addEventListener('click', () => {
 });
 
 clearBtn.addEventListener('click', () => {
-  finalTranscript   = '';
-  lastCheckedLength = 0;
+  finalTranscript = '';
   finalTextEl.textContent   = '';
   interimTextEl.textContent = '';
 });
