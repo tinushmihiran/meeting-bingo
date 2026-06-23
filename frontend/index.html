@@ -9,23 +9,38 @@
 <body>
   <header>
     <h1>Meeting Bingo</h1>
-    <p>Paste a meeting transcript below. An agent reads it and marks off the cliches it hears -- even paraphrased.</p>
+    <p>Speak your meeting — bingo marks itself.</p>
   </header>
 
   <main>
-    <section class="input-panel">
-      <label for="transcript">Paste meeting transcript</label>
-      <textarea id="transcript" placeholder="Paste your meeting transcript here..."></textarea>
-      <button id="check-btn">Check Bingo</button>
-      <p id="status" aria-live="polite"></p>
-    </section>
+    <div id="bingo-banner" class="banner-hidden">BINGO!</div>
 
-    <section class="card-panel">
-      <div id="bingo-banner" class="banner-hidden">BINGO!</div>
-      <div id="grid" class="grid"></div>
-      <p id="evidence" class="hidden" aria-live="polite"></p>
-      <button id="new-card-btn" type="button">New Card</button>
-    </section>
+    <div class="controls">
+      <button id="mic-btn" class="mic-button" aria-label="Start listening">
+        <svg class="mic-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="9" y="1" width="6" height="11" rx="3"/>
+          <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+          <line x1="12" y1="19" x2="12" y2="23"/>
+          <line x1="8" y1="23" x2="16" y2="23"/>
+        </svg>
+        <span id="mic-label">Start Listening</span>
+      </button>
+      <p id="status" aria-live="polite"></p>
+    </div>
+
+    <div id="grid" class="grid"></div>
+
+    <div class="transcript-panel">
+      <div class="transcript-header">
+        <span>Live Transcript</span>
+        <button id="clear-btn" type="button">Clear</button>
+      </div>
+      <div id="transcript-display" class="transcript-display" aria-live="polite">
+        <span id="final-text"></span><span id="interim-text" class="interim"></span>
+      </div>
+    </div>
+
+    <button id="new-card-btn" type="button">New Card</button>
   </main>
 
   <script src="app.js"></script>

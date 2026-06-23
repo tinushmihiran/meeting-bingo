@@ -1,154 +1,268 @@
-const gridEl = document.getElementById("grid");
-const transcriptEl = document.getElementById("transcript");
-const checkBtn = document.getElementById("check-btn");
-const statusEl = document.getElementById("status");
-const bannerEl = document.getElementById("bingo-banner");
-const evidenceEl = document.getElementById("evidence");
-const newCardBtn = document.getElementById("new-card-btn");
+'use strict';
 
-let currentPhrases = [];
+const STORAGE_KEY = 'meeting-bingo-voice';
+const DEBOUNCE_MS = 3000;
+const PERIODIC_MS = 20000;
 
-const STORAGE_KEY = "meeting-bingo-state";
+let card = [];
+let matched = new Set();
+let evidenceMap = {};
+let winningLine = null;
+let finalTranscript = '';
+let lastCheckedLength = 0;
+let isListening = false;
+let isChecking = false;
+let debounceTimer = null;
+let periodicTimer = null;
 
-function saveState() {
-  sessionStorage.setItem(
-    STORAGE_KEY,
-    JSON.stringify({ phrases: currentPhrases, transcript: transcriptEl.value })
-  );
-}
+const gridEl        = document.getElementById('grid');
+const micBtn        = document.getElementById('mic-btn');
+const micLabel      = document.getElementById('mic-label');
+const statusEl      = document.getElementById('status');
+const bingoBanner   = document.getElementById('bingo-banner');
+const newCardBtn    = document.getElementById('new-card-btn');
+const finalTextEl   = document.getElementById('final-text');
+const interimTextEl = document.getElementById('interim-text');
+const transcriptEl  = document.getElementById('transcript-display');
+const clearBtn      = document.getElementById('clear-btn');
 
-function loadStoredState() {
-  try {
-    return JSON.parse(sessionStorage.getItem(STORAGE_KEY));
-  } catch {
-    return null;
-  }
-}
+// ── Speech Recognition ────────────────────────────────────────────────────────
 
-function renderGrid(phrases, matchedSet = new Set(), evidenceMap = new Map()) {
-  gridEl.innerHTML = "";
-  phrases.forEach((phrase) => {
-    const square = document.createElement("div");
-    const matched = matchedSet.has(phrase);
-    square.className = "square" + (matched ? " matched" : "");
-    square.dataset.phrase = phrase;
-    square.textContent = matched ? `✓ ${phrase}` : phrase;
-    if (matched && evidenceMap.has(phrase)) {
-      square.tabIndex = 0;
-      square.setAttribute("role", "button");
-      square.setAttribute("aria-label", `${phrase}, matched. Press to view evidence.`);
-      const evidence = evidenceMap.get(phrase);
-      const showEvidence = () => {
-        evidenceEl.textContent = evidence;
-        evidenceEl.classList.remove("hidden");
-      };
-      square.addEventListener("click", showEvidence);
-      square.addEventListener("keydown", (e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          showEvidence();
-        }
-      });
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+let recognition = null;
+
+if (SR) {
+  recognition = new SR();
+  recognition.continuous = true;
+  recognition.interimResults = true;
+  recognition.lang = 'en-US';
+
+  recognition.onresult = (event) => {
+    let interim = '';
+    for (let i = event.resultIndex; i < event.results.length; i++) {
+      if (event.results[i].isFinal) {
+        finalTranscript += event.results[i][0].transcript + ' ';
+      } else {
+        interim += event.results[i][0].transcript;
+      }
     }
-    gridEl.appendChild(square);
-  });
+    finalTextEl.textContent = finalTranscript;
+    interimTextEl.textContent = interim;
+    transcriptEl.scrollTop = transcriptEl.scrollHeight;
+    scheduleCheck();
+  };
+
+  recognition.onerror = (event) => {
+    if (event.error === 'no-speech') return;
+    if (event.error === 'not-allowed') {
+      setStatus('Microphone access denied.', 'error');
+      setListening(false);
+    } else {
+      setStatus('Mic error: ' + event.error, 'error');
+    }
+  };
+
+  recognition.onend = () => {
+    interimTextEl.textContent = '';
+    if (isListening) {
+      try { recognition.start(); } catch (_) {}
+    }
+  };
+} else {
+  micBtn.disabled = true;
+  setStatus('Speech recognition not supported — try Chrome or Edge.', 'error');
 }
 
-async function loadCard({ forceNew = false } = {}) {
-  if (!forceNew) {
-    const stored = loadStoredState();
-    if (stored?.phrases?.length) {
-      currentPhrases = stored.phrases;
-      transcriptEl.value = stored.transcript || "";
-      renderGrid(currentPhrases);
-      statusEl.textContent = "";
-      return;
-    }
-  }
+// ── Check logic ───────────────────────────────────────────────────────────────
 
-  statusEl.textContent = "Loading card...";
-  try {
-    const res = await fetch("/api/card");
-    if (!res.ok) {
-      throw new Error(`Request failed: ${res.status}`);
-    }
-    const data = await res.json();
-    currentPhrases = data.phrases;
-    renderGrid(currentPhrases);
-    statusEl.textContent = "";
-    saveState();
-  } catch (err) {
-    statusEl.textContent = `Couldn't load the card: ${err.message}. Refresh to retry.`;
-  }
+function scheduleCheck() {
+  clearTimeout(debounceTimer);
+  debounceTimer = setTimeout(runCheck, DEBOUNCE_MS);
 }
 
-async function checkBingo() {
-  const transcript = transcriptEl.value.trim();
-  if (!transcript) {
-    statusEl.textContent = "Paste a transcript first.";
-    return;
-  }
+async function runCheck() {
+  if (isChecking || winningLine) return;
+  if (finalTranscript.length <= lastCheckedLength || !finalTranscript.trim()) return;
 
-  checkBtn.disabled = true;
-  statusEl.textContent = "Checking transcript...";
-  statusEl.classList.add("loading");
-  bannerEl.classList.add("banner-hidden");
-  evidenceEl.classList.add("hidden");
+  isChecking = true;
+  setStatus('Checking…', 'checking');
 
   try {
-    const res = await fetch("/api/check", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ transcript, phrases: currentPhrases }),
+    const res = await fetch('/api/check', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ transcript: finalTranscript, phrases: card }),
     });
 
     if (!res.ok) {
-      const errBody = await res.json().catch(() => null);
-      throw new Error(errBody?.detail || `Request failed: ${res.status}`);
+      const body = await res.json().catch(() => ({ detail: 'Request failed' }));
+      setStatus(body.detail || 'Check failed', 'error');
+      return;
     }
 
     const data = await res.json();
-    const matchedSet = new Set(
-      data.results.filter((r) => r.matched).map((r) => r.phrase)
-    );
-    const evidenceMap = new Map(
-      data.results.filter((r) => r.matched && r.evidence).map((r) => [r.phrase, r.evidence])
-    );
+    lastCheckedLength = finalTranscript.length;
 
-    renderGrid(currentPhrases, matchedSet, evidenceMap);
+    const prevMatched = new Set(matched);
+    data.results.forEach(r => {
+      if (r.matched) {
+        matched.add(r.phrase);
+        if (r.evidence) evidenceMap[r.phrase] = r.evidence;
+      }
+    });
+
+    if (data.bingo && data.winning_line) {
+      winningLine = data.winning_line;
+      bingoBanner.className = 'banner-visible';
+      setStatus('BINGO!', 'bingo');
+      clearInterval(periodicTimer);
+    } else {
+      setStatus(isListening ? 'Listening…' : '', isListening ? 'listening' : '');
+    }
+
+    updateGrid(prevMatched);
     saveState();
-
-    const matchedCount = matchedSet.size;
-    statusEl.textContent = `${matchedCount} of ${currentPhrases.length} phrases matched.`;
-
-    if (data.bingo) {
-      bannerEl.classList.remove("banner-hidden");
-    }
-
-    if (data.winning_line) {
-      const winningSet = new Set(data.winning_line);
-      gridEl.querySelectorAll(".square").forEach((sq) => {
-        if (winningSet.has(sq.dataset.phrase)) sq.classList.add("winning");
-      });
-    }
-  } catch (err) {
-    statusEl.textContent = `Error: ${err.message}`;
+  } catch (e) {
+    setStatus('Error: ' + e.message, 'error');
   } finally {
-    checkBtn.disabled = false;
-    statusEl.classList.remove("loading");
+    isChecking = false;
   }
 }
 
-checkBtn.addEventListener("click", checkBingo);
-newCardBtn.addEventListener("click", () => {
-  bannerEl.classList.add("banner-hidden");
-  evidenceEl.classList.add("hidden");
-  statusEl.textContent = "";
-  transcriptEl.value = "";
+// ── Grid ──────────────────────────────────────────────────────────────────────
+
+function buildGrid() {
+  gridEl.innerHTML = '';
+  card.forEach(phrase => {
+    const cell = document.createElement('div');
+    cell.className = 'cell';
+    cell.textContent = phrase;
+    gridEl.appendChild(cell);
+  });
+}
+
+function updateGrid(prevMatched = null) {
+  const cells = gridEl.querySelectorAll('.cell');
+  cells.forEach((cell, i) => {
+    const phrase = card[i];
+    const isMatched = matched.has(phrase);
+    const isWinner  = winningLine && winningLine.includes(phrase);
+    const isNew     = prevMatched && isMatched && !prevMatched.has(phrase);
+
+    cell.classList.toggle('matched', isMatched);
+    cell.classList.toggle('winner',  isWinner);
+    cell.title = evidenceMap[phrase] || '';
+
+    if (isNew) {
+      cell.classList.add('new-match');
+      setTimeout(() => cell.classList.remove('new-match'), 600);
+    }
+  });
+}
+
+// ── Listening control ─────────────────────────────────────────────────────────
+
+function setListening(active) {
+  isListening = active;
+  micBtn.classList.toggle('listening', active);
+  micLabel.textContent = active ? 'Stop Listening' : 'Start Listening';
+  micBtn.setAttribute('aria-label', active ? 'Stop listening' : 'Start listening');
+
+  if (active) {
+    setStatus('Listening…', 'listening');
+    periodicTimer = setInterval(runCheck, PERIODIC_MS);
+    try { recognition.start(); } catch (_) {}
+  } else {
+    clearInterval(periodicTimer);
+    clearTimeout(debounceTimer);
+    try { recognition.stop(); } catch (_) {}
+    if (finalTranscript.length > lastCheckedLength) runCheck();
+    if (!winningLine) setStatus('', '');
+  }
+}
+
+function setStatus(text, type = '') {
+  statusEl.textContent = text;
+  statusEl.className = 'status ' + type;
+}
+
+// ── Card ──────────────────────────────────────────────────────────────────────
+
+async function fetchCard() {
+  setStatus('Loading…', '');
+  try {
+    const res = await fetch('/api/card');
+    if (!res.ok) throw new Error('Failed to fetch card');
+    const data = await res.json();
+    card         = data.phrases;
+    matched      = new Set();
+    evidenceMap  = {};
+    winningLine  = null;
+    finalTranscript   = '';
+    lastCheckedLength = 0;
+    finalTextEl.textContent   = '';
+    interimTextEl.textContent = '';
+    bingoBanner.className = 'banner-hidden';
+    buildGrid();
+    updateGrid();
+    setStatus('', '');
+    saveState();
+  } catch (e) {
+    setStatus('Failed to load card.', 'error');
+  }
+}
+
+// ── Persistence ───────────────────────────────────────────────────────────────
+
+function saveState() {
+  try {
+    sessionStorage.setItem(STORAGE_KEY, JSON.stringify({
+      card, matched: [...matched], evidenceMap, winningLine,
+      transcript: finalTranscript,
+    }));
+  } catch (_) {}
+}
+
+function loadState() {
+  try {
+    const s = JSON.parse(sessionStorage.getItem(STORAGE_KEY));
+    if (s && Array.isArray(s.card) && s.card.length === 25) {
+      card         = s.card;
+      matched      = new Set(s.matched || []);
+      evidenceMap  = s.evidenceMap || {};
+      winningLine  = s.winningLine || null;
+      finalTranscript   = s.transcript || '';
+      lastCheckedLength = finalTranscript.length;
+      finalTextEl.textContent = finalTranscript;
+      buildGrid();
+      updateGrid();
+      if (winningLine) bingoBanner.className = 'banner-visible';
+      return true;
+    }
+  } catch (_) {}
+  return false;
+}
+
+// ── Events ────────────────────────────────────────────────────────────────────
+
+micBtn.addEventListener('click', () => {
+  if (!recognition) return;
+  setListening(!isListening);
+});
+
+newCardBtn.addEventListener('click', () => {
+  if (isListening) setListening(false);
   sessionStorage.removeItem(STORAGE_KEY);
-  loadCard({ forceNew: true });
+  fetchCard();
 });
-document.addEventListener("keydown", (e) => {
-  if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) checkBingo();
+
+clearBtn.addEventListener('click', () => {
+  finalTranscript   = '';
+  lastCheckedLength = 0;
+  finalTextEl.textContent   = '';
+  interimTextEl.textContent = '';
 });
-loadCard();
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+
+if (!loadState()) fetchCard();
