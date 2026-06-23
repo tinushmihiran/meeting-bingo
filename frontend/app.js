@@ -31,6 +31,7 @@ function renderGrid(phrases, matchedSet = new Set(), evidenceMap = new Map()) {
     const square = document.createElement("div");
     const matched = matchedSet.has(phrase);
     square.className = "square" + (matched ? " matched" : "");
+    square.dataset.phrase = phrase;
     square.textContent = matched ? `✓ ${phrase}` : phrase;
     if (matched && evidenceMap.has(phrase)) {
       square.tabIndex = 0;
@@ -123,6 +124,13 @@ async function checkBingo() {
     if (data.bingo) {
       bannerEl.classList.remove("banner-hidden");
     }
+
+    if (data.winning_line) {
+      const winningSet = new Set(data.winning_line);
+      gridEl.querySelectorAll(".square").forEach((sq) => {
+        if (winningSet.has(sq.dataset.phrase)) sq.classList.add("winning");
+      });
+    }
   } catch (err) {
     statusEl.textContent = `Error: ${err.message}`;
   } finally {
@@ -136,7 +144,11 @@ newCardBtn.addEventListener("click", () => {
   bannerEl.classList.add("banner-hidden");
   evidenceEl.classList.add("hidden");
   statusEl.textContent = "";
+  transcriptEl.value = "";
   sessionStorage.removeItem(STORAGE_KEY);
   loadCard({ forceNew: true });
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) checkBingo();
 });
 loadCard();

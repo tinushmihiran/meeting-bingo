@@ -33,18 +33,24 @@ Reviewed: 2026-06-23 | Reviewers: VP Product, VP Engineering, VP Design
 | 18 | Added `aria-live="polite"` to `#status` (`frontend/index.html`) for parity with `#evidence`, so the in-flight check and result count are announced. |
 | 19 | Increased grid square font size (`frontend/style.css`, `0.75rem` → `clamp(0.85rem, 1.4vw, 1.1rem)`) for projector legibility. |
 
+### Round 3 — Changes Applied (all remaining items resolved)
+
+| # | Change |
+|---|---------------------|
+| 20 | Added FastAPI `TestClient` tests for `/api/card` and `/api/check` (invalid phrase set, success + `winning_line`, Claude failure → 502, rate-limit → 429) with `bingo.check_transcript` mocked; added `find_winning_line` unit tests. `httpx` added to `requirements.txt` for `TestClient`. |
+| 21 | `bingo.find_winning_line()` now returns the matching phrases; `/api/check` returns `winning_line` in the response; frontend (`app.js`/`style.css`) highlights that specific row/column/diagonal with a pulsing outline instead of relying on the banner alone. |
+| 22 | Added a "Pre-demo rehearsal checklist" to `README.md` requiring a live end-to-end run of the actual demo transcript before presenting. |
+| 23 | Confirmed `/api/check`'s `def` (not `async def`) handler already runs in FastAPI's threadpool, not the event loop — documented with an inline comment in `main.py` rather than changed, since it was already correct. |
+| 24 | `bingo.py` now builds the Anthropic client once via a lazy module-level singleton (`_get_client()`) instead of per-request. |
+| 25 | Added a basic in-memory per-IP rate limiter (10 requests/minute) on `/api/check`, returning 429 once exceeded. |
+| 26 | `MODEL` now reads from `ANTHROPIC_MODEL` env var with the existing value as default; documented (commented) in `.env.example`. |
+| 27 | Added a proper `<label for="transcript">` on the textarea instead of relying on the placeholder as the only label. |
+| 28 | Added a Ctrl/Cmd+Enter keyboard shortcut to submit the transcript from the textarea. |
+| 29 | Pinned exact versions for all backend dependencies in `requirements.txt`. |
+
 ### Unresolved Items
 
-- [ ] No test coverage for the `/api/check` request/response path or FastAPI routes — only `detect_bingo`'s pure logic is tested (Medium; recommend a mocked test before further changes).
-- [ ] No highlight of the specific winning row/column/diagonal, banner-only payoff (Medium; optional polish).
-- [ ] No rehearsal step requiring the actual planned demo transcript be run end-to-end against the live model before presenting — semantic matching is non-deterministic (Medium).
-- [ ] Synchronous Anthropic client blocking FastAPI's threadpool under concurrent load (Low — single-presenter scope).
-- [ ] Per-request client instantiation instead of module-level reuse (Low).
-- [ ] No rate limiting on `/api/check` (Low — mitigate by not leaving the URL publicly reachable post-workshop).
-- [ ] Hardcoded model with no env override (Low).
-- [ ] Placeholder-as-label on the textarea (Low).
-- [ ] No Ctrl/Cmd+Enter submit shortcut (Low).
-- [ ] Unpinned dependency versions in `requirements.txt` (Low — risk of same-day drift).
+None — all items from Round 1 and Round 2 reviews have been addressed.
 
 ---
 
