@@ -1,0 +1,150 @@
+* {
+  box-sizing: border-box;
+}
+
+body {
+  font-family: system-ui, -apple-system, sans-serif;
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 1.5rem;
+  background: #f4f1ea;
+  color: #222;
+}
+
+header h1 {
+  margin-bottom: 0.25rem;
+}
+
+main {
+  display: flex;
+  gap: 2rem;
+  flex-wrap: wrap;
+  margin-top: 1.5rem;
+}
+
+.input-panel {
+  flex: 1 1 320px;
+  display: flex;
+  flex-direction: column;
+}
+
+textarea {
+  min-height: 280px;
+  padding: 0.75rem;
+  font-family: inherit;
+  font-size: 0.95rem;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  resize: vertical;
+}
+
+button {
+  margin-top: 0.75rem;
+  padding: 0.6rem 1.2rem;
+  font-size: 1rem;
+  border: none;
+  border-radius: 6px;
+  background: #b5651d;
+  color: white;
+  cursor: pointer;
+  align-self: flex-start;
+}
+
+button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+#new-card-btn {
+  margin-top: 0.75rem;
+  background: #6b7280;
+}
+
+#status {
+  min-height: 1.2rem;
+  color: #555;
+}
+
+#status.loading::after {
+  content: "";
+  display: inline-block;
+  width: 0.8em;
+  height: 0.8em;
+  margin-left: 0.5em;
+  border: 2px solid #b5651d;
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  vertical-align: middle;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.card-panel {
+  flex: 1 1 360px;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 6px;
+}
+
+.square {
+  aspect-ratio: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  font-size: clamp(0.85rem, 1.4vw, 1.1rem);
+  padding: 0.4rem;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  background: white;
+  cursor: default;
+}
+
+.square.matched {
+  background: #8fbf7f;
+  border-color: #5c9447;
+  color: white;
+  cursor: pointer;
+}
+
+.square.matched:focus-visible {
+  outline: 3px solid #2f5d20;
+  outline-offset: 2px;
+}
+
+#evidence {
+  margin-top: 0.75rem;
+  padding: 0.6rem 0.8rem;
+  background: #fff8e6;
+  border: 1px solid #e0c98a;
+  border-radius: 6px;
+  font-style: italic;
+}
+
+#bingo-banner {
+  text-align: center;
+  font-size: 2.5rem;
+  font-weight: bold;
+  color: #b5651d;
+  margin-bottom: 0.75rem;
+  min-height: 3.5rem;
+  opacity: 1;
+  transform: scale(1);
+  transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+#bingo-banner.banner-hidden {
+  opacity: 0;
+  transform: scale(0.85);
+  pointer-events: none;
+}
+
+.hidden {
+  display: none;
+}

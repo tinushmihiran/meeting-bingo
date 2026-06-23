@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Meeting Bingo</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header>
+    <h1>Meeting Bingo</h1>
+    <p>Paste a meeting transcript below. An agent reads it and marks off the cliches it hears -- even paraphrased.</p>
+  </header>
+
+  <main>
+    <section class="input-panel">
+      <textarea id="transcript" placeholder="Paste your meeting transcript here..."></textarea>
+      <button id="check-btn">Check Bingo</button>
+      <p id="status" aria-live="polite"></p>
+    </section>
+
+    <section class="card-panel">
+      <div id="bingo-banner" class="banner-hidden">BINGO!</div>
+      <div id="grid" class="grid"></div>
+      <p id="evidence" class="hidden" aria-live="polite"></p>
+      <button id="new-card-btn" type="button">New Card</button>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
