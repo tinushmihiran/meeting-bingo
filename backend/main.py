@@ -12,12 +12,6 @@ import bingo
 
 load_dotenv()
 
-if not os.environ.get("ANTHROPIC_API_KEY"):
-    raise RuntimeError(
-        "ANTHROPIC_API_KEY is not set. Copy backend/.env.example to backend/.env "
-        "and add your key."
-    )
-
 app = FastAPI(title="Meeting Bingo")
 
 FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
