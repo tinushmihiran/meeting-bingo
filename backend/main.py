@@ -74,4 +74,5 @@ def check(request: CheckRequest, http_request: Request) -> dict:
     return {"results": results, "bingo": winning_line is not None, "winning_line": winning_line}
 
 
-app.mount("/", StaticFiles(directory=FRONTEND_DIR, html=True), name="frontend")
+if not os.environ.get("VERCEL"):
+    app.mount("/", StaticFiles(directory=FRONTEND_DIR, html=True), name="frontend")
